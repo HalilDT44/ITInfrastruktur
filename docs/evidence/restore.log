@@ -1,0 +1,8 @@
+db:5432 - no response
+db:5432 - accepting connections
+ count 
+-------
+     1
+(1 row)
+
+PASS: pg_dump restored into separate validation database

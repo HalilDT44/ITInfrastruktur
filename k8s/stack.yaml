@@ -1,0 +1,3024 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "zendo",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "monitoring",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "monitoring",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "app-config",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "app-config",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "data": {
+        "DB_HOST": "db",
+        "DB_POOL_SIZE": "10",
+        "REPORT_DELAY_SECONDS": "2",
+        "REPORT_CONCURRENCY": "16"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "web-config",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web-config",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "data": {
+        "default.conf": "server {\n    listen 8080;\n    server_name _;\n    root /usr/share/nginx/html;\n    index index.html;\n    server_tokens off;\n\n    add_header X-Content-Type-Options nosniff always;\n\n    location = /health {\n        access_log off;\n        default_type text/plain;\n        return 200 \"ok\\n\";\n    }\n\n    location = /ready {\n        access_log off;\n        try_files /index.html =503;\n    }\n\n    location /api/ {\n        client_max_body_size 6m;\n        proxy_request_buffering off;\n        proxy_pass http://api:8000;\n        client_body_timeout 300s;\n        proxy_send_timeout 300s;\n        proxy_read_timeout 300s;\n        proxy_connect_timeout 10s;\n    }\n\n    location / {\n        try_files $uri $uri/ =404;\n        add_header Cache-Control \"no-cache\";\n        add_header X-Content-Type-Options nosniff always;\n    }\n}\n"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "db-data",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "db-data",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "5Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "backups",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "backups",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "5Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "StatefulSet",
+      "metadata": {
+        "name": "db",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "db",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "data"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "db"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "db",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "data"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 70
+            },
+            "containers": [
+              {
+                "name": "db",
+                "image": "postgres:17-alpine",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 5432,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "256Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "1Gi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 70,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "pg_isready -U zendo -d zendo"
+                    ]
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5
+                },
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "PGPASSWORD=\"$(cat /run/secrets/db_password)\" psql -h 127.0.0.1 -U zendo -d zendo -tAc \"SELECT 1\""
+                    ]
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5
+                },
+                "env": [
+                  {
+                    "name": "POSTGRES_USER",
+                    "value": "zendo"
+                  },
+                  {
+                    "name": "POSTGRES_DB",
+                    "value": "zendo"
+                  },
+                  {
+                    "name": "POSTGRES_PASSWORD_FILE",
+                    "value": "/run/secrets/db_password"
+                  },
+                  {
+                    "name": "PGDATA",
+                    "value": "/var/lib/postgresql/data/pgdata"
+                  }
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "data",
+                    "mountPath": "/var/lib/postgresql/data"
+                  },
+                  {
+                    "name": "password",
+                    "mountPath": "/run/secrets",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "run",
+                    "mountPath": "/var/run/postgresql"
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "db-data"
+                }
+              },
+              {
+                "name": "password",
+                "secret": {
+                  "secretName": "db-secret",
+                  "defaultMode": 292
+                }
+              },
+              {
+                "name": "run",
+                "emptyDir": {}
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "serviceName": "db"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "db",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "db",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "db"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 5432,
+            "targetPort": 5432
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "api",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "backend"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "replicas": 2,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "api"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "api",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "backend"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 10001
+            },
+            "containers": [
+              {
+                "name": "api",
+                "image": "zendo-api:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 8000,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "192Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "512Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/api/live",
+                    "port": 8000
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/api/ready",
+                    "port": 8000
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "volumeMounts": [
+                  {
+                    "name": "password",
+                    "mountPath": "/run/secrets",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "app-config"
+                    }
+                  }
+                ],
+                "lifecycle": {
+                  "preStop": {
+                    "exec": {
+                      "command": [
+                        "python",
+                        "-c",
+                        "import time; time.sleep(10)"
+                      ]
+                    }
+                  }
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/api/live",
+                    "port": 8000
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 30
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "password",
+                "secret": {
+                  "secretName": "db-secret",
+                  "defaultMode": 292
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "maxSkew": 1,
+                "topologyKey": "kubernetes.io/hostname",
+                "whenUnsatisfiable": "ScheduleAnyway",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "api"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "api",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "api"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8000,
+            "targetPort": 8000
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "web",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "frontend"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "replicas": 2,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "web"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "web",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "frontend"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 101
+            },
+            "containers": [
+              {
+                "name": "web",
+                "image": "zendo-web:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 101,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/health",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/ready",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "volumeMounts": [
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/nginx/conf.d",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ],
+                "lifecycle": {
+                  "preStop": {
+                    "exec": {
+                      "command": [
+                        "sh",
+                        "-c",
+                        "sleep 10; nginx -s quit"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "config",
+                "configMap": {
+                  "name": "web-config"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "web",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "web"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "waf-config",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf-config",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "data": {
+        "REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf": "SecRule REQUEST_URI \"@streq /api/submissions\" \"id:1001,phase:1,pass,nolog,ctl:requestBodyAccess=Off\"\n",
+        "proxy_backend.conf.template": "proxy_http_version 1.1;\nproxy_set_header Host $host;\nproxy_set_header Connection \"\";\nproxy_request_buffering off;\nproxy_buffering off;\nproxy_connect_timeout 10s;\nproxy_send_timeout 300s;\nproxy_read_timeout 300s;\nproxy_pass http://web:8080;\n"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "waf",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "edge"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "replicas": 2,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "waf"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "waf",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "edge"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 101
+            },
+            "containers": [
+              {
+                "name": "waf",
+                "image": "owasp/modsecurity-crs:nginx",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "200m",
+                    "memory": "256Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "1Gi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 101,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "tcpSocket": {
+                    "port": 8080
+                  },
+                  "periodSeconds": 10
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/ready",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "env": [
+                  {
+                    "name": "CLIENT_BODY_TIMEOUT",
+                    "value": "300s"
+                  },
+                  {
+                    "name": "ALLOWED_METHODS",
+                    "value": "GET HEAD POST OPTIONS PUT"
+                  },
+                  {
+                    "name": "ALLOWED_REQUEST_CONTENT_TYPE",
+                    "value": "|application/json| |application/octet-stream|"
+                  },
+                  {
+                    "name": "BACKEND",
+                    "value": "http://web:8080"
+                  },
+                  {
+                    "name": "PORT",
+                    "value": "8080"
+                  },
+                  {
+                    "name": "MODSEC_RULE_ENGINE",
+                    "value": "On"
+                  },
+                  {
+                    "name": "MODSEC_REQ_BODY_LIMIT",
+                    "value": "6291456"
+                  },
+                  {
+                    "name": "MODSEC_REQ_BODY_NOFILES_LIMIT",
+                    "value": "6291456"
+                  },
+                  {
+                    "name": "MODSEC_REQ_BODY_LIMIT_ACTION",
+                    "value": "Reject"
+                  }
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "wafconfig",
+                    "mountPath": "/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf",
+                    "subPath": "REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "wafconfig",
+                    "mountPath": "/etc/nginx/templates/includes/proxy_backend.conf.template",
+                    "subPath": "proxy_backend.conf.template",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              },
+              {
+                "name": "wafconfig",
+                "configMap": {
+                  "name": "waf-config"
+                }
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "waf",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "waf"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "policy/v1",
+      "kind": "PodDisruptionBudget",
+      "metadata": {
+        "name": "api",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "minAvailable": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "api"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "autoscaling/v2",
+      "kind": "HorizontalPodAutoscaler",
+      "metadata": {
+        "name": "api",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "scaleTargetRef": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "api"
+        },
+        "minReplicas": 2,
+        "maxReplicas": 8,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": {
+              "name": "cpu",
+              "target": {
+                "type": "Utilization",
+                "averageUtilization": 65
+              }
+            }
+          }
+        ],
+        "behavior": {
+          "scaleDown": {
+            "stabilizationWindowSeconds": 180
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "policy/v1",
+      "kind": "PodDisruptionBudget",
+      "metadata": {
+        "name": "web",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "minAvailable": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "web"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "autoscaling/v2",
+      "kind": "HorizontalPodAutoscaler",
+      "metadata": {
+        "name": "web",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "scaleTargetRef": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "minReplicas": 2,
+        "maxReplicas": 8,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": {
+              "name": "cpu",
+              "target": {
+                "type": "Utilization",
+                "averageUtilization": 65
+              }
+            }
+          }
+        ],
+        "behavior": {
+          "scaleDown": {
+            "stabilizationWindowSeconds": 180
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "policy/v1",
+      "kind": "PodDisruptionBudget",
+      "metadata": {
+        "name": "waf",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "minAvailable": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "waf"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "autoscaling/v2",
+      "kind": "HorizontalPodAutoscaler",
+      "metadata": {
+        "name": "waf",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "scaleTargetRef": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "waf"
+        },
+        "minReplicas": 2,
+        "maxReplicas": 8,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": {
+              "name": "cpu",
+              "target": {
+                "type": "Utilization",
+                "averageUtilization": 65
+              }
+            }
+          }
+        ],
+        "behavior": {
+          "scaleDown": {
+            "stabilizationWindowSeconds": 180
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "Ingress",
+      "metadata": {
+        "name": "zendo",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo",
+        "annotations": {
+          "traefik.ingress.kubernetes.io/router.entrypoints": "websecure",
+          "traefik.ingress.kubernetes.io/router.tls": "true"
+        }
+      },
+      "spec": {
+        "ingressClassName": "traefik",
+        "tls": [
+          {
+            "hosts": [
+              "zendo.local"
+            ],
+            "secretName": "zendo-tls"
+          }
+        ],
+        "rules": [
+          {
+            "host": "zendo.local",
+            "http": {
+              "paths": [
+                {
+                  "path": "/",
+                  "pathType": "Prefix",
+                  "backend": {
+                    "service": {
+                      "name": "waf",
+                      "port": {
+                        "number": 8080
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "default-deny",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "default-deny",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": [
+          "Ingress"
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "default-deny",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "default-deny",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": [
+          "Ingress"
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "ingress-waf",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "ingress-waf",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "waf"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "traefik"
+                  }
+                },
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "waf-web",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf-web",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "web"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "waf"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "web-api",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web-api",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "api"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "web"
+                  }
+                }
+              },
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "prometheus"
+                  }
+                },
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "monitoring"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "api-db",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api-db",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "db"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "api"
+                  }
+                }
+              },
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "backup"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5432
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "waf-egress",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "waf-egress",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "waf"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "web"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "web-egress",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "web-egress",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "web"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "api"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "api-egress",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "api-egress",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "api"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "db"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5432
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "db-egress",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "db-egress",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "db"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "backup-egress",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "backup-egress",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "backup"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "db"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5432
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "CronJob",
+      "metadata": {
+        "name": "backup",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "backup",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "zendo"
+      },
+      "spec": {
+        "schedule": "0 */6 * * *",
+        "concurrencyPolicy": "Forbid",
+        "successfulJobsHistoryLimit": 2,
+        "failedJobsHistoryLimit": 3,
+        "jobTemplate": {
+          "spec": {
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/part-of": "zendo",
+                  "app.kubernetes.io/name": "backup",
+                  "app.kubernetes.io/version": "1.0.0",
+                  "tier": "data"
+                }
+              },
+              "spec": {
+                "restartPolicy": "OnFailure",
+                "automountServiceAccountToken": false,
+                "securityContext": {
+                  "runAsUser": 70,
+                  "runAsNonRoot": true,
+                  "fsGroup": 70
+                },
+                "containers": [
+                  {
+                    "name": "backup",
+                    "image": "postgres:17-alpine",
+                    "command": [
+                      "sh",
+                      "-ec",
+                      "export PGPASSWORD=\"$(cat /run/secrets/db_password)\"; file=/backups/zendo-$(date -u +%Y%m%dT%H%M%SZ).dump; pg_dump -h db -U zendo -d zendo -Fc -f \"$file.tmp\"; mv \"$file.tmp\" \"$file\"; find /backups -name \"*.dump\" -mtime +7 -delete"
+                    ],
+                    "resources": {
+                      "requests": {
+                        "cpu": "100m",
+                        "memory": "128Mi"
+                      },
+                      "limits": {
+                        "cpu": "1",
+                        "memory": "512Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "readOnlyRootFilesystem": true,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      }
+                    },
+                    "volumeMounts": [
+                      {
+                        "name": "backup",
+                        "mountPath": "/backups"
+                      },
+                      {
+                        "name": "password",
+                        "mountPath": "/run/secrets",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "backup",
+                    "persistentVolumeClaim": {
+                      "claimName": "backups"
+                    }
+                  },
+                  {
+                    "name": "password",
+                    "secret": {
+                      "secretName": "db-secret",
+                      "defaultMode": 292
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "prometheus-data",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "prometheus-data",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "2Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "grafana-data",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "grafana-data",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "2Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "alertmanager-data",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "alertmanager-data",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "2Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "prometheus",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "prometheus",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "zendo-monitoring",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo-monitoring",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "nodes",
+            "nodes/proxy",
+            "services",
+            "endpoints",
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "nonResourceURLs": [
+            "/metrics",
+            "/metrics/cadvisor"
+          ],
+          "verbs": [
+            "get"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRoleBinding",
+      "metadata": {
+        "name": "zendo-monitoring",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo-monitoring",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "zendo-monitoring"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "prometheus",
+          "namespace": "monitoring"
+        }
+      ]
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "prometheus-config",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "prometheus-config",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "data": {
+        "prometheus.json": "{\"global\": {\"scrape_interval\": \"15s\", \"evaluation_interval\": \"15s\"}, \"rule_files\": [\"/etc/prometheus/rules.json\"], \"alerting\": {\"alertmanagers\": [{\"static_configs\": [{\"targets\": [\"alertmanager:9093\"]}]}]}, \"scrape_configs\": [{\"job_name\": \"api\", \"kubernetes_sd_configs\": [{\"role\": \"pod\", \"namespaces\": {\"names\": [\"zendo\"]}}], \"relabel_configs\": [{\"source_labels\": [\"__meta_kubernetes_pod_label_app_kubernetes_io_name\"], \"regex\": \"api\", \"action\": \"keep\"}, {\"source_labels\": [\"__meta_kubernetes_pod_container_port_number\"], \"regex\": \"8000\", \"action\": \"keep\"}, {\"source_labels\": [\"__meta_kubernetes_pod_name\"], \"target_label\": \"pod\"}]}, {\"job_name\": \"kube-state-metrics\", \"static_configs\": [{\"targets\": [\"kube-state-metrics:8080\"]}]}, {\"job_name\": \"cadvisor\", \"scheme\": \"https\", \"authorization\": {\"credentials_file\": \"/var/run/secrets/kubernetes.io/serviceaccount/token\"}, \"tls_config\": {\"ca_file\": \"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt\"}, \"kubernetes_sd_configs\": [{\"role\": \"node\"}], \"relabel_configs\": [{\"target_label\": \"__address__\", \"replacement\": \"kubernetes.default.svc:443\"}, {\"source_labels\": [\"__meta_kubernetes_node_name\"], \"target_label\": \"__metrics_path__\", \"replacement\": \"/api/v1/nodes/$1/proxy/metrics/cadvisor\"}]}, {\"job_name\": \"traefik\", \"kubernetes_sd_configs\": [{\"role\": \"pod\", \"namespaces\": {\"names\": [\"kube-system\"]}}], \"relabel_configs\": [{\"source_labels\": [\"__meta_kubernetes_pod_label_app_kubernetes_io_name\"], \"regex\": \"traefik\", \"action\": \"keep\"}, {\"source_labels\": [\"__meta_kubernetes_pod_container_port_name\"], \"regex\": \"metrics\", \"action\": \"keep\"}]}]}",
+        "rules.json": "{\"groups\": [{\"name\": \"zendo\", \"rules\": [{\"alert\": \"BackendUnavailable\", \"expr\": \"sum(up{job=\\\"api\\\"}) == 0 or absent(up{job=\\\"api\\\"})\", \"for\": \"30s\", \"labels\": {\"severity\": \"critical\"}, \"annotations\": {\"summary\": \"BackendUnavailable \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"DatabaseUnavailable\", \"expr\": \"min(zendo_database_up) == 0 or kube_statefulset_status_replicas_ready{namespace=\\\"zendo\\\",statefulset=\\\"db\\\"} == 0\", \"for\": \"30s\", \"labels\": {\"severity\": \"critical\"}, \"annotations\": {\"summary\": \"DatabaseUnavailable \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"PodNotReady\", \"expr\": \"kube_pod_status_ready{namespace=~\\\"zendo|monitoring\\\",condition=\\\"true\\\"} == 0\", \"for\": \"1m\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"PodNotReady \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"ContainerRestart\", \"expr\": \"increase(kube_pod_container_status_restarts_total{namespace=~\\\"zendo|monitoring\\\"}[5m]) > 0\", \"for\": \"0s\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"ContainerRestart \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"ReplicasMissing\", \"expr\": \"kube_deployment_status_replicas_available{namespace=~\\\"zendo|monitoring\\\"} < kube_deployment_spec_replicas{namespace=~\\\"zendo|monitoring\\\"}\", \"for\": \"1m\", \"labels\": {\"severity\": \"critical\"}, \"annotations\": {\"summary\": \"ReplicasMissing \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"ContainerMemoryLimit\", \"expr\": \"container_memory_working_set_bytes{namespace=~\\\"zendo|monitoring\\\",container!=\\\"\\\"} / on(namespace,pod,container) group_left kube_pod_container_resource_limits{resource=\\\"memory\\\",namespace=~\\\"zendo|monitoring\\\"} > 0.9\", \"for\": \"1m\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"ContainerMemoryLimit \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"MemoryHigh\", \"expr\": \"container_memory_working_set_bytes{namespace=\\\"zendo\\\",container=\\\"api\\\"} > 450000000\", \"for\": \"2m\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"MemoryHigh \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"CPUHigh\", \"expr\": \"sum by(pod)(rate(container_cpu_usage_seconds_total{namespace=\\\"zendo\\\",container=\\\"api\\\"}[2m])) > 1.4\", \"for\": \"2m\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"CPUHigh \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"ReportSlow\", \"expr\": \"histogram_quantile(0.95,sum by(le)(rate(zendo_request_seconds_bucket{route=\\\"/api/reports/generate\\\"}[5m]))) > 5\", \"for\": \"2m\", \"labels\": {\"severity\": \"warning\"}, \"annotations\": {\"summary\": \"ReportSlow \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"BackupFailed\", \"expr\": \"kube_job_status_failed{namespace=\\\"zendo\\\"} > 0\", \"for\": \"1m\", \"labels\": {\"severity\": \"critical\"}, \"annotations\": {\"summary\": \"BackupFailed \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}, {\"alert\": \"IngressErrors\", \"expr\": \"sum(rate(traefik_service_requests_total{code=~\\\"5..\\\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total[5m])),1) > 0.05\", \"for\": \"1m\", \"labels\": {\"severity\": \"critical\"}, \"annotations\": {\"summary\": \"IngressErrors \\u2013 Zendo Infrastruktur pr\\u00fcfen\"}}]}]}"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "prometheus",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "prometheus",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "prometheus"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "prometheus",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "ops"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": true,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 65534
+            },
+            "containers": [
+              {
+                "name": "prometheus",
+                "image": "prom/prometheus:v3.7.3",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 9090,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "256Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "1Gi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 65534,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/-/healthy",
+                    "port": 9090
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/-/ready",
+                    "port": 9090
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "args": [
+                  "--config.file=/etc/prometheus/prometheus.json",
+                  "--storage.tsdb.path=/prometheus",
+                  "--storage.tsdb.retention.time=7d"
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/prometheus"
+                  },
+                  {
+                    "name": "data",
+                    "mountPath": "/prometheus"
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "config",
+                "configMap": {
+                  "name": "prometheus-config"
+                }
+              },
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "prometheus-data"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ],
+            "serviceAccountName": "prometheus"
+          }
+        },
+        "strategy": {
+          "type": "Recreate"
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "prometheus",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "prometheus",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "prometheus"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 9090,
+            "targetPort": 9090
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "grafana-config",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "grafana-config",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "data": {
+        "datasources.yaml": "{\"apiVersion\": 1, \"datasources\": [{\"name\": \"Prometheus\", \"type\": \"prometheus\", \"uid\": \"prometheus\", \"access\": \"proxy\", \"url\": \"http://prometheus:9090\", \"isDefault\": true}]}",
+        "dashboards.yaml": "{\"apiVersion\": 1, \"providers\": [{\"name\": \"Zendo\", \"folder\": \"Zendo\", \"type\": \"file\", \"options\": {\"path\": \"/var/lib/grafana/dashboards\"}}]}"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "grafana-dashboard",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "grafana-dashboard",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "data": {
+        "zendo.json": "{\"title\": \"Zendo Infrastruktur\", \"uid\": \"zendo\", \"schemaVersion\": 39, \"version\": 1, \"refresh\": \"10s\", \"panels\": [{\"id\": 1, \"title\": \"CPU je Pod\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 0, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"sum by(pod)(rate(container_cpu_usage_seconds_total{namespace=\\\"zendo\\\"}[2m]))\", \"refId\": \"A\"}]}, {\"id\": 2, \"title\": \"Speicher je Pod\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 12, \"y\": 0, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"sum by(pod)(container_memory_working_set_bytes{namespace=\\\"zendo\\\"})\", \"refId\": \"A\"}]}, {\"id\": 3, \"title\": \"Verf\\u00fcgbare Replicas\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 8, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"kube_deployment_status_replicas_available{namespace=\\\"zendo\\\"}\", \"refId\": \"A\"}]}, {\"id\": 4, \"title\": \"Gew\\u00fcnschte Replicas\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 12, \"y\": 8, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"kube_deployment_spec_replicas{namespace=\\\"zendo\\\"}\", \"refId\": \"A\"}]}, {\"id\": 5, \"title\": \"Pod Ready\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 16, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"kube_pod_status_ready{namespace=\\\"zendo\\\",condition=\\\"true\\\"}\", \"refId\": \"A\"}]}, {\"id\": 6, \"title\": \"API Rate\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 12, \"y\": 16, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"sum(rate(zendo_requests_total[1m]))\", \"refId\": \"A\"}]}, {\"id\": 7, \"title\": \"API p95\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 24, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"histogram_quantile(.95,sum by(le)(rate(zendo_request_seconds_bucket[2m])))\", \"refId\": \"A\"}]}, {\"id\": 8, \"title\": \"Ingress Rate\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 12, \"y\": 24, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"sum(rate(traefik_service_requests_total[1m]))\", \"refId\": \"A\"}]}, {\"id\": 9, \"title\": \"Ingress p95\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 32, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"histogram_quantile(.95,sum by(le)(rate(traefik_service_request_duration_seconds_bucket[2m])))\", \"refId\": \"A\"}]}, {\"id\": 10, \"title\": \"Datenbank\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 12, \"y\": 32, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"zendo_database_up\", \"refId\": \"A\"}]}, {\"id\": 11, \"title\": \"Container Neustarts\", \"type\": \"timeseries\", \"datasource\": {\"type\": \"prometheus\", \"uid\": \"prometheus\"}, \"gridPos\": {\"x\": 0, \"y\": 40, \"w\": 12, \"h\": 8}, \"targets\": [{\"expr\": \"kube_pod_container_status_restarts_total{namespace=\\\"zendo\\\"}\", \"refId\": \"A\"}]}]}"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "grafana",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "grafana",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "grafana"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "grafana",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "ops"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 472
+            },
+            "containers": [
+              {
+                "name": "grafana",
+                "image": "grafana/grafana:12.2.1",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 3000,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "512Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 472,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "tcpSocket": {
+                    "port": 3000
+                  },
+                  "periodSeconds": 10
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/api/health",
+                    "port": 3000
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "env": [
+                  {
+                    "name": "GF_SECURITY_ADMIN_PASSWORD__FILE",
+                    "value": "/run/secrets/admin_password"
+                  },
+                  {
+                    "name": "GF_USERS_ALLOW_SIGN_UP",
+                    "value": "false"
+                  }
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "data",
+                    "mountPath": "/var/lib/grafana"
+                  },
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/grafana/provisioning/datasources/datasources.yaml",
+                    "subPath": "datasources.yaml"
+                  },
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/grafana/provisioning/dashboards/dashboards.yaml",
+                    "subPath": "dashboards.yaml"
+                  },
+                  {
+                    "name": "dashboard",
+                    "mountPath": "/var/lib/grafana/dashboards"
+                  },
+                  {
+                    "name": "password",
+                    "mountPath": "/run/secrets",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "grafana-data"
+                }
+              },
+              {
+                "name": "config",
+                "configMap": {
+                  "name": "grafana-config"
+                }
+              },
+              {
+                "name": "dashboard",
+                "configMap": {
+                  "name": "grafana-dashboard"
+                }
+              },
+              {
+                "name": "password",
+                "secret": {
+                  "secretName": "grafana-secret",
+                  "defaultMode": 292
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "Recreate"
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "grafana",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "grafana",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "grafana"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 3000,
+            "targetPort": 3000
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "alertmanager",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "alertmanager",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "alertmanager"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "alertmanager",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "ops"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 65534
+            },
+            "containers": [
+              {
+                "name": "alertmanager",
+                "image": "prom/alertmanager:v0.28.1",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 9093,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 65534,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/-/healthy",
+                    "port": 9093
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/-/ready",
+                    "port": 9093
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "args": [
+                  "--config.file=/etc/alertmanager/alertmanager.json",
+                  "--storage.path=/alertmanager",
+                  "--cluster.listen-address="
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/alertmanager"
+                  },
+                  {
+                    "name": "data",
+                    "mountPath": "/alertmanager"
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "config",
+                "secret": {
+                  "secretName": "alertmanager-secret",
+                  "defaultMode": 292
+                }
+              },
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "alertmanager-data"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "Recreate"
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "alertmanager",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "alertmanager",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "alertmanager"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 9093,
+            "targetPort": 9093
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "notifier-code",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "notifier-code",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "data": {
+        "notify.py": "\"\"\"Independent alert receiver; alerts remain visible when API/DB fail.\"\"\"\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nimport json\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        self.send_response(200);self.end_headers();self.wfile.write(b'ready: stdout receiver initialized' if self.path=='/ready' else b'alive')\n    def do_POST(self):\n        data=self.rfile.read(min(int(self.headers.get('Content-Length','0')),1048576))\n        print(json.dumps({'notification':json.loads(data)}),flush=True)\n        self.send_response(200);self.end_headers()\nThreadingHTTPServer(('0.0.0.0',8080),Handler).serve_forever()\n"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "notifier",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "notifier",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "notifier"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "notifier",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "ops"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 10001
+            },
+            "containers": [
+              {
+                "name": "notifier",
+                "image": "zendo-api:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/live",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/ready",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "command": [
+                  "python",
+                  "/code/notify.py"
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "code",
+                    "mountPath": "/code"
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "code",
+                "configMap": {
+                  "name": "notifier-code"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "notifier",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "notifier",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "notifier"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "kube-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "kube-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "zendo-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods",
+            "nodes",
+            "persistentvolumeclaims"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments",
+            "statefulsets",
+            "replicasets"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "batch"
+          ],
+          "resources": [
+            "jobs",
+            "cronjobs"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRoleBinding",
+      "metadata": {
+        "name": "zendo-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "zendo-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        }
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "zendo-state-metrics"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "kube-state-metrics",
+          "namespace": "monitoring"
+        }
+      ]
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "kube-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "kube-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "kube-state-metrics"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "zendo",
+              "app.kubernetes.io/name": "kube-state-metrics",
+              "app.kubernetes.io/version": "1.0.0",
+              "tier": "ops"
+            }
+          },
+          "spec": {
+            "enableServiceLinks": false,
+            "automountServiceAccountToken": true,
+            "terminationGracePeriodSeconds": 75,
+            "securityContext": {
+              "fsGroup": 65534
+            },
+            "containers": [
+              {
+                "name": "kube-state-metrics",
+                "image": "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.17.0",
+                "imagePullPolicy": "IfNotPresent",
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 65534,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/readyz",
+                    "port": 8081
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "args": [
+                  "--resources=pods,nodes,persistentvolumeclaims,deployments,statefulsets,replicasets,jobs,cronjobs"
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ],
+            "serviceAccountName": "kube-state-metrics"
+          }
+        },
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "minReadySeconds": 5
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "kube-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "kube-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "kube-state-metrics"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "allow-prometheus",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "allow-prometheus",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "prometheus"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "grafana"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 9090
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "allow-alertmanager",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "allow-alertmanager",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "alertmanager"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "prometheus"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 9093
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "allow-notifier",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "allow-notifier",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "notifier"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "alertmanager"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "allow-kube-state-metrics",
+        "labels": {
+          "app.kubernetes.io/part-of": "zendo",
+          "app.kubernetes.io/name": "allow-kube-state-metrics",
+          "app.kubernetes.io/version": "1.0.0",
+          "tier": "ops"
+        },
+        "namespace": "monitoring"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "kube-state-metrics"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "prometheus"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

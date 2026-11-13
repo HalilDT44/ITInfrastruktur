@@ -1,0 +1,16 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: zendo
+    app.kubernetes.io/name: traefik-config
+    app.kubernetes.io/version: 1.0.0
+    tier: edge
+spec:
+  valuesContent: |-
+    additionalArguments:
+      - --entryPoints.websecure.transport.respondingTimeouts.readTimeout=300s
+      - --entryPoints.websecure.transport.respondingTimeouts.writeTimeout=300s
+      - --serversTransport.forwardingTimeouts.responseHeaderTimeout=300s
